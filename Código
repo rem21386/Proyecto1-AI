@@ -1,0 +1,384 @@
+#Importar librerías
+import math
+from collections import deque
+import matplotlib.pyplot as plt
+import numpy as np
+import heapq
+import time
+import random
+
+#Clase de nodos
+class Node:
+    def __init__(self, state, parent=None, action=None, cost=0, priority_order=0):
+        self.state = state
+        self.parent = parent
+        self.action = action
+        self.cost = cost
+        #Prioridad basada en el orden de jerarquía (0=arriba, 1=derecha, 2=abajo, 3=izquierda)
+        self.priority_order = priority_order
+    
+    #Comunición con heapq
+    def __lt__(self, other):
+        return self.cost < other.cost
+
+#Cola para BFS
+class FIFO:
+    def __init__(self):
+        self.elements = deque()
+        self.states = set()
+
+    def EMPTY(self):
+        return len(self.elements) == 0
+
+    #Nodo inicial
+    def TOP(self):
+        return self.elements[0] if not self.EMPTY() else None
+
+    def POP(self):
+        if self.EMPTY():
+            return None
+        node = self.elements.popleft()
+        self.states.remove(node.state)
+        return node
+
+    def ADD(self, element):
+        if element.state not in self.states:
+            self.elements.append(element)
+            self.states.add(element.state)
+        return self.elements
+
+#Cola para DFS
+class LIFO:
+    def __init__(self):
+        self.elements = deque()
+        self.states = set()
+
+    def EMPTY(self):
+        return len(self.elements) == 0
+
+    #Nodo final
+    def TOP(self):
+        return self.elements[-1] if not self.EMPTY() else None
+
+    def POP(self):
+        if self.EMPTY():
+            return None
+        node = self.elements.pop()
+        self.states.remove(node.state)
+        return node
+    
+    def ADD(self, element):
+        if element.state not in self.states:
+            self.elements.append(element)
+            self.states.add(element.state)
+        return self.elements
+
+#Cola para GBFS
+class PRIORITY_GBFS:
+    def __init__(self):
+        self.elements = []  
+        self.counter = 0    
+        self.states = {}    
+
+    def EMPTY(self):
+        return len(self.elements) == 0
+
+    def TOP(self):
+        return self.elements[0][3] if not self.EMPTY() else None
+
+    def POP(self):
+        if self.EMPTY():
+            return None
+        _, _, _, node = heapq.heappop(self.elements)
+        del self.states[node.state]
+        return node
+
+    def ADD(self, element):
+        heuristic_value = heuristics.get(element.state, float('inf'))
+        
+        #Solo se agrega el estado no está en la frontera o tiene mejor heurística
+        if element.state not in self.states or heuristic_value < self.states[element.state][0]:
+            if element.state in self.states:
+                #Eliminar nodo existente con peor heurística si hay dos iguales
+                self.states[element.state] = (heuristic_value, element.priority_order)
+            else:
+                self.states[element.state] = (heuristic_value, element.priority_order)
+            
+            #Usar priority_order para respetar jerarquía en caso de haber un empate de heurísticas
+            self.counter += 1
+            heapq.heappush(self.elements, (heuristic_value, element.priority_order, self.counter, element))
+        return self.elements
+
+#Cola para A*
+class PRIORITY_A:
+    def __init__(self):
+        self.elements = []  
+        self.counter = 0    
+        self.states = {}    
+
+    def EMPTY(self):
+        return len(self.elements) == 0
+
+    def TOP(self):
+        return self.elements[0][3] if not self.EMPTY() else None
+
+    def POP(self):
+        if self.EMPTY():
+            return None
+        _, _, _, node = heapq.heappop(self.elements)
+        del self.states[node.state]
+        return node
+
+    def ADD(self, element):
+        f_value = element.cost + heuristics.get(element.state, float('inf'))
+        
+        #Solo añadir si el estado no está en la frontera o tiene mejor valor f (heurística + costo acumulado)
+        if element.state not in self.states or f_value < self.states[element.state][0]:
+            if element.state in self.states:
+                #Eliminar nodo existente con peor valor f
+                self.states[element.state] = (f_value, element.priority_order)
+            else:
+                self.states[element.state] = (f_value, element.priority_order)
+            
+            #Usar priority_order para respetar jerarquía en caso de haber un empate de heurísticas
+            self.counter += 1
+            heapq.heappush(self.elements, (f_value, element.priority_order, self.counter, element))
+        return self.elements
+
+#Función para cargar archivo del laberinto
+def load_maze_from_file(file_path):
+    with open(file_path, 'r') as file:
+        maze = [list(map(int, line.strip().split(','))) for line in file]
+    return maze
+
+#Función para definir un inicio aleatorio que no esté en una pared
+def find_random_start(maze):
+    while True:
+        i = random.randint(0, len(maze) - 1)
+        j = random.randint(0, len(maze[0]) - 1)
+        if maze[i][j] != 1:
+            return (i, j)
+
+#Función para definir el inicio que establece el archivo
+def find_start_and_goal(maze):
+    start = None
+    goal = None
+    for i in range(len(maze)):
+        for j in range(len(maze[i])):
+            if maze[i][j] == 2:
+                start = (i, j)
+            elif maze[i][j] == 3:
+                goal = (i, j)
+    return start, goal
+
+#Función de heurística euclidiana
+def euclidean_distance(a, b):
+    return math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
+
+#Función de heurística de manhattan
+def manhattan_distance(a, b):
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+#Función para obtener nodos hijos
+def get_neighbors(maze, node):
+    neighbors = []
+    i, j = node.state
+    #Jerarquía de exploración: Arriba, Derecha, Abajo, Izquierda
+    directions = [
+        ('Arriba', (-1, 0), 0),      #Prioridad 0
+        ('Derecha', (0, 1), 1),      #Prioridad 1
+        ('Abajo', (1, 0), 2),        #Prioridad 2
+        ('Izquierda', (0, -1), 3)    #Prioridad 3
+    ]
+    
+    for action, (di, dj), priority in directions:
+        ni, nj = i + di, j + dj
+        if 0 <= ni < len(maze) and 0 <= nj < len(maze[0]) and maze[ni][nj] != 1:
+            neighbors.append(((ni, nj), action, 1, priority))
+    return neighbors
+
+#Función para dibujar en el laberinto
+def plot_maze(maze, explored, current_node, ax, path=None):
+    #Crear una matriz de colores para el laberinto
+    maze_colors = np.zeros((len(maze), len(maze[0]), 3))  
+    for i in range(len(maze)):
+        for j in range(len(maze[i])):
+            if maze[i][j] == 1:
+                maze_colors[i, j] = [0, 0, 0]  #Paredes (negro)
+            else:
+                maze_colors[i, j] = [1, 1, 1]  #Espacio libre (blanco)
+
+    #Inicio verde
+    if start:
+        i, j = start
+        maze_colors[i, j] = [0, 1, 0]
+
+    #Final rojo
+    if goal:
+        i, j = goal
+        maze_colors[i, j] = [1, 0, 0]
+
+    #Marcar nodos explorados
+    for (i, j) in explored:
+        if (i, j) != start and (i, j) != goal: #No sobreescribir el inicio ni el final
+            maze_colors[i, j] = [0.5, 0.5, 0.5]  #Gris para nodos explorados
+
+    #Marcar nodo actual
+    if current_node:
+        i, j = current_node.state
+        if (i, j) != start and (i, j) != goal:
+            maze_colors[i, j] = [0, 0, 1]  #Azul para el nodo actual
+
+    #Marcar el camino óptimo
+    if path:
+        for (state, _, _) in path:
+            i, j = state
+            if (i, j) != start and (i, j) != goal:
+                maze_colors[i, j] = [1, 1, 0]  #Amarillo para el camino óptimo
+
+    #Actualizar la imagen del laberinto
+    ax.imshow(maze_colors)
+    plt.pause(0.0001)  # Pausa mínima para actualizar la gráfica
+
+#Función de exploración
+def search(maze, start, goal, frontier):
+    frontier.ADD(Node(start))
+    explored = set()
+    fig, ax = plt.subplots()  #Crear figura y eje
+    plt.ion()  
+    plot_maze(maze, explored, None, ax)  #Mostrar el laberinto inicial
+    counter = 0
+    #Datos para branching factor
+    total_nodes_generated = 1  
+    max_depth = 0  
+
+    #Seguir explorando siempre y cuando existan nodos en la cola
+    while not frontier.EMPTY():
+        node = frontier.POP()
+        #Condición de si llega al estado objetivo
+        if node.state == goal:
+            path = []
+            current = node
+            while current:
+                path.append((current.state, current.action, current.cost))
+                current = current.parent
+            return path[::-1], explored, ax, total_nodes_generated, max_depth
+        
+        if node.state in explored:
+            continue
+            
+        explored.add(node.state)
+        counter += 1
+
+        #Actualizar la profundidad máxima
+        if node.cost > max_depth:
+            max_depth = node.cost
+
+        #Actualizar la gráfica cada cierto número de nodos (más grande más rápido)
+        if counter % update_frequency == 0:
+            plot_maze(maze, explored, node, ax)
+
+        #Obtener vecinos con su prioridad de jerarquía
+        neighbors = get_neighbors(maze, node)
+
+        #Invertir el orden para mantener la jerarquía correcta
+        if isinstance(frontier, FIFO) or isinstance(frontier, LIFO):
+            neighbors = list(reversed(neighbors))
+        
+        #Añadir vecinos a la frontera
+        for neighbor, action, cost, priority in neighbors:
+            if neighbor not in explored:
+                new_node = Node(neighbor, node, action, node.cost + cost, priority)
+                frontier.ADD(new_node)
+                total_nodes_generated += 1  
+
+    #En caso no se llegue al estado objetivo
+    print("No se encontró un camino.")
+    return None, explored, ax, total_nodes_generated, max_depth
+
+#ELegir el algoritmo
+print("Escoge el algoritmo que quieres")
+print("1: Breath-First Search")
+print("2: Depth-First Search")
+print("3: Greedy Best-first Search")
+print("4: A*")
+num = int(input("Ingresa el número: "))
+
+#Elegir la heurística
+print("")
+print("Escoge la heuristica que quieres")
+print("1: Distancia euclidiana")
+print("2: Distancia de manhattan")
+num2 = int(input("Ingresa el número: "))
+
+#Archivo del laberinto
+print("")
+laberinto = input("Ingresa el nombre del archivo del laberinto: ")
+file_path = laberinto 
+maze = load_maze_from_file(file_path)
+start, goal = find_start_and_goal(maze)
+
+#Inicio del laberinto
+print("")
+print("Escoge tu punto de partida")
+print("1: Punto establecido por el archivo")
+print("2: Punto aleatorio")
+num3 = int(input("Ingresa el número: "))
+if num3 == 2:
+    start = find_random_start(maze)
+    #start = (100,100) #En caso se quiera definir el punto de partida
+    print(f"Punto de partida aleatorio: {start}")
+
+#Frecuencia de actualización del laberinto
+print("")
+update_frequency = int(input("Ingresa la frecuencia de actualización del laberinto: "))
+
+#Heuristica escogida
+if num2 == 2:
+    heuristics = {(i, j): manhattan_distance((i, j), goal) for i in range(len(maze)) for j in range(len(maze[i]))}
+elif num2 == 1:
+    heuristics = {(i, j): euclidean_distance((i, j), goal) for i in range(len(maze)) for j in range(len(maze[i]))}
+    
+#Algoritmo escogido
+if num == 1:
+    frontier = FIFO()
+elif num == 2:
+    frontier = LIFO()
+elif num == 3:
+    frontier = PRIORITY_GBFS()
+elif num == 4:
+    frontier = PRIORITY_A()
+
+#Encontrar el camino e imprimir cuantos pasos necesita
+inicio = time.time()
+path, explored_nodes, axx, total_nodes_generated, max_depth = search(maze, start, goal, frontier)
+fin = time.time()
+tiempo_transcurrido = fin - inicio
+print(" ")
+if path:
+    plot_maze(maze, explored_nodes, None, axx, path)
+    plt.draw()          
+    plt.pause(0.1)      
+    print(f"Cantidad de pasos para la solución: {len(path)}")
+else:
+    print("No se encontró un camino.")
+
+#Nodos explorados
+print(f"Total de nodos explorados: {len(explored_nodes)}")
+
+#Tiempo de ejecución
+print(f"Tiempo de ejecución: {tiempo_transcurrido:.2f} segundos")
+
+#Branching factor
+if max_depth > 0:
+    branching_factor = total_nodes_generated / max_depth
+    print(f"Branching factor aproximado: {branching_factor:.2f}")
+else:
+    print("No existen nodos hijos")
+
+if path:
+    print("")
+    print("Presione enter para imprimir todos los pasos del camino encontrado")
+    input()
+    for state, action, cost in path:
+        print(f"Estado: {state}, Acción: {action}, Costo: {cost}")
