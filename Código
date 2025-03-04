@@ -282,7 +282,7 @@ def search(maze, start, goal, frontier):
         neighbors = get_neighbors(maze, node)
 
         #Invertir el orden para mantener la jerarquía correcta
-        if isinstance(frontier, FIFO) or isinstance(frontier, LIFO):
+        if isinstance(frontier, LIFO):
             neighbors = list(reversed(neighbors))
         
         #Añadir vecinos a la frontera
@@ -382,3 +382,4 @@ if path:
     input()
     for state, action, cost in path:
         print(f"Estado: {state}, Acción: {action}, Costo: {cost}")
+
